@@ -37,13 +37,23 @@ router.post('/crearsala', function(req, res, next) {
 
     let db = req.app.get('database');
 
-    var idgame = idGenerator();
+    var idgamevalido = false;
+    var idgame = "";
+    while(!idgamevalido){
+        idgame = idGenerator();
+        let sql = db.prepare("select * from partidas where idgame = ?");
+        let row = sql.get(idgame);
+        if(row == void(0)){ //if row == undefined
+            idgamevalido = true;
+        }
+        console.log("idgamevalido: " + idgamevalido);
+    }
 
     var salavalida = false;
     var sala = 0;
     while(!salavalida){
         sala = salaGenerator();
-        let sql = db.prepare("select * from partidas where sala = ?");
+        let sql = db.prepare("select * from partidas where sala = ? and isActive = 1");
         let row = sql.get(sala);
         if(row == void(0)){ //if row == undefined
             salavalida = true;
@@ -59,16 +69,16 @@ router.post('/crearsala', function(req, res, next) {
     }
     shuffle(baraja);
 
-    var sql = db.prepare('INSERT INTO partidas VALUES(?,?,?,?,?,?,?)');
-    var info = sql.run(idgame, sala, 1, currentTimeUNIX, JSON.stringify(baraja), 0, 0);
+    var sql = db.prepare('INSERT INTO partidas VALUES(?,?,?,?,?,?,?,?)');
+    var info = sql.run(idgame, sala, 1, currentTimeUNIX, JSON.stringify(baraja), 0, 0, 1);
     console.log(info.changes);
 
-    var sql2 = db.prepare('INSERT INTO playersensala(username, sala, numPlayer, isLeader) VALUES(?,?,?,?)');
-    var info = sql2.run(username, sala, 1, 1);
+    var sql2 = db.prepare('INSERT INTO playersensala(username, idgame, sala, numPlayer, isLeader) VALUES(?,?,?,?,?)');
+    var info = sql2.run(username, idgame, sala, 1, 1);
     console.log(info.changes);
 
-    let sql3 = db.prepare('select * from playersensala where sala = ?')
-    let rows = sql3.all(sala);
+    let sql3 = db.prepare('select * from playersensala where idgame = ?')
+    let rows = sql3.all(idgame);
     var players = [];
     rows.forEach(function(row){
         players.push(row.username);
@@ -86,14 +96,15 @@ router.post('/unirsala', function(req, res, next) {
     let db = req.app.get('database');
     var salanotfound = false;
 
-    let sql = db.prepare("select * from partidas where sala = ?");
+    let sql = db.prepare("select * from partidas where sala = ? and isActive = 1");
     let row = sql.get(sala);
     if(row == void(0)){ //if row == undefined
         salanotfound = true;
         res.json({idgame: "???", sala: 0, error: "La sala " + sala + " no está activa."});
     }else{
-        var sql4 = db.prepare("select * from playersensala where username = ? and sala = ?");
-        var row2 = sql4.get(username, sala);
+        var idgame = row.idgame;
+        var sql4 = db.prepare("select * from playersensala where username = ? and idgame = ?");
+        var row2 = sql4.get(username, idgame);
         if(row2 != void(0)){
             res.json({idgame: "????", sala: 0, numplayers: 0, error: "Ya hay alguien en la sala " + sala + " llamado " + username + "."})
             return;
@@ -108,22 +119,22 @@ router.post('/unirsala', function(req, res, next) {
             res.json({idgame: "????", sala: 0, numplayers: 0, error: "La partida ya está en curso."});
             return;
         }
-        var sql2 = db.prepare("update partidas set numPlayers = ? where id = ?")
-        var info = sql2.run(numplayers + 1, row.id);
+        var sql2 = db.prepare("update partidas set numPlayers = ? where idgame = ?")
+        var info = sql2.run(numplayers + 1, idgame);
         console.log(info.changes);
 
-        var sql3 = db.prepare('INSERT INTO playersensala(username, sala, numplayer) VALUES(?,?,?)');
-        var info = sql3.run(username, sala, numplayers + 1);
+        var sql3 = db.prepare('INSERT INTO playersensala(username, idgame, sala, numplayer) VALUES(?,?,?,?)');
+        var info = sql3.run(username, idgame, sala, numplayers + 1);
         console.log(info.changes);
 
-        let sqlplayers = db.prepare('select * from playersensala where sala = ?')
-        let rows = sqlplayers.all(sala);
+        let sqlplayers = db.prepare('select * from playersensala where idgame = ?')
+        let rows = sqlplayers.all(idgame);
         var players = [];
         rows.forEach(function(row){
             players.push(row.username);
         })
 
-        res.json({idgame: row.id, sala: sala, numplayers: numplayers + 1, arrayplayers: JSON.stringify(players)});
+        res.json({idgame: idgame, sala: sala, numplayers: numplayers + 1, arrayplayers: JSON.stringify(players)});
     }
 });
 
@@ -131,20 +142,21 @@ router.post('/waitstart', function(req, res, next) {
   
     console.log(req.body);
     var username = req.body.username;
+    var idgame = req.body.idgame;
     var sala = req.body.sala;
 
     let db = req.app.get('database');
     var salanotfound = false;
 
-    let sql = db.prepare('select * from partidas where sala = ?');
-    let row = sql.get(sala);
+    let sql = db.prepare('select * from partidas where idgame = ?');
+    let row = sql.get(idgame);
     if(row == void(0)){ //if row == undefined
         salanotfound = true;
         res.json({idgame: "???", sala: 0, start: "no"});
     }else{
         let numplayers = row.numPlayers;
-        let sql2 = db.prepare('select * from playersensala where sala = ?')
-        let rows = sql2.all(sala);
+        let sql2 = db.prepare('select * from playersensala where idgame = ?')
+        let rows = sql2.all(idgame);
         var players = [];
         rows.forEach(function(row){
             players.push(row.username);
@@ -153,9 +165,9 @@ router.post('/waitstart', function(req, res, next) {
         if(row.ronda == 1){
             start = "yes";
         }
-        let sqlIsLeader = db.prepare('select * from playersensala where sala = ? and username = ?');
-        let rowIsLeader = sqlIsLeader.get(sala, username);
-        res.json({idgame: row.id, sala: sala, start: start, numplayers: numplayers, arrayplayers: JSON.stringify(players), isLeader: rowIsLeader.isLeader});
+        let sqlIsLeader = db.prepare('select * from playersensala where idgame = ? and username = ?');
+        let rowIsLeader = sqlIsLeader.get(idgame, username);
+        res.json({idgame: row.idgame, sala: sala, start: start, numplayers: numplayers, arrayplayers: JSON.stringify(players), isLeader: rowIsLeader.isLeader});
     }
 });
 
@@ -166,25 +178,27 @@ router.post('/startgame', function(req, res, next) {
     var sala = req.body.sala;
 
     let db = req.app.get('database');
-    let sql = db.prepare('select * from partidas where id = ?');
+    let sql = db.prepare('select * from partidas where idgame = ?');
     let row = sql.get(idgame);
     if(row == void(0)){ //if row == undefined
         res.json({idgame: "???", sala: 0, start: "no"});
     }else{
-        let sqlupdatepartida = db.prepare('update partidas set ronda = 1, turno = 1 where id = ?');
+        let sqlupdatepartida = db.prepare('update partidas set ronda = 1, turno = 1 where idgame = ?');
         let info = sqlupdatepartida.run(idgame);
         console.log(info.changes);
 
-        let sqlplayers = db.prepare('select * from playersensala where sala = ?')
-        let rowsplayers = sqlplayers.all(sala);
+        let sqlplayers = db.prepare('select * from playersensala where idgame = ?')
+        let rowsplayers = sqlplayers.all(idgame);
         var players = [];
         rowsplayers.forEach(function(row){
             players.push(row.username);
         })
-        shuffle(players);
+        console.log("antes: " + players);
+        players = shuffle(players);
+        console.log("despues: " + players);
         for(let i = 0; i < players.length; i++){
-            let sqlupdatepartida = db.prepare('update playersensala set numPlayer = ? where username = ? and sala = ?');
-            let info = sqlupdatepartida.run(i+1, players[i].username, sala);
+            let sqlupdatepartida = db.prepare('update playersensala set numPlayer = ? where username = ? and idgame = ?');
+            let info = sqlupdatepartida.run(i+1, players[i], idgame);
             console.log(info.changes);
         }
         res.json({todook: 'joseluis'});
@@ -197,11 +211,11 @@ router.post('/initgame', function(req, res, next) {
     var idgame = req.body.idgame;
     var sala = req.body.sala;
     let db = req.app.get('database');
-    let sql = db.prepare('select * from partidas where id = ?');
+    let sql = db.prepare('select * from partidas where idgame = ?');
     var row = sql.get(idgame);
     if(row.ronda == 1 && row.turno == 1){
-        let sqlplayers = db.prepare('select * from playersensala where sala = ?');
-        let rows = sqlplayers.all(sala);
+        let sqlplayers = db.prepare('select * from playersensala where idgame = ?');
+        let rows = sqlplayers.all(idgame);
         var players = [];
         rows.forEach(function(row){
             players.push({username: row.username, num: row.numPlayer});
@@ -210,17 +224,46 @@ router.post('/initgame', function(req, res, next) {
         var baraja = JSON.parse(row.baraja);
         var numcartas = 12 - row.numPlayers;
         for(let i = 0; i < row.numPlayers; i++){
-            let sqlupdatecartas = db.prepare('update playersensala set cartas = ? where numPlayer = ? and sala = ?');
-            let info = sqlupdatecartas.run(JSON.stringify(baraja.slice(i*numcartas, (i+1)*numcartas)), i+1, sala);
+            let sqlupdatecartas = db.prepare('update playersensala set cartas = ?, hasPlayed = 0 where numPlayer = ? and idgame = ?');
+            let info = sqlupdatecartas.run(JSON.stringify(baraja.slice(i*numcartas, (i+1)*numcartas)), i+1, idgame);
             console.log(info.changes);
         }
     
-        let sqlcartas = db.prepare('select * from playersensala where username = ? and sala = ?');
-        let rowcartas = sqlcartas.get(username, sala);
+        let sqlcartas = db.prepare('select * from playersensala where username = ? and idgame = ?');
+        let rowcartas = sqlcartas.get(username, idgame);
         var cartas = JSON.parse(rowcartas.cartas);
         res.json({numplayers: row.numPlayers, arrayplayers: players, cartas: cartas, numplayer: rowcartas.numPlayer});
     }else{
         res.json({error: "no me hagas un initgame con la partida empezada, animal"});
+    }
+});
+
+router.post('/playcard', function(req, res, next) {
+    console.log(req.body);
+    var username = req.body.username;
+    var idgame = req.body.idgame;
+    var sala = req.body.sala;
+    var card = req.body.card;
+    let db = req.app.get('database');
+    let sql = db.prepare('select * from playersensala where idgame = ? and username = ?');
+    var row = sql.get(idgame, username);
+    if(row.hasPlayed == 0){
+        var cartas = JSON.parse(row.cartas);
+        console.log("Card: " + card);
+        console.log("cartas: " + cartas);
+        const index = cartas.indexOf(parseInt(card, 10));
+        console.log("index: " + index);
+        if (index > -1) {
+            cartas.splice(index, 1);
+            let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, hasPlayed = 1 where idgame = ? and username = ?');
+            let info = sqlUpdateCartas.run(JSON.stringify(cartas), idgame, username);
+            console.log(info.changes);
+            res.json({status: "ok"});
+        }else{
+            res.json({status: "ERROR: La carta a jugar no está en tu mano."});
+        }
+    }else{
+        res.json({status: "ok"});
     }
 });
 
