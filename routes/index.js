@@ -227,9 +227,14 @@ router.post('/playcard', function(req, res, next) {
 	var sala = req.body.sala;
 	var card = req.body.card;
 	var turno = req.body.turno;
+	var withWasabi = req.body.withWasabi;
 	
 	console.log(username + ": playcard (" + card + ")");
 	let db = req.app.get('database');
+
+	let sqlpartida = db.prepare('select * from partidas where idgame = ?');
+	var infopartida = sqlpartida.get(idgame);
+
 	let sql = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ?');
 	var row = sql.get(idgame, username, turno);
 	if(row.hasPlayed == 0){
@@ -241,6 +246,10 @@ router.post('/playcard', function(req, res, next) {
 			cartastablero.push(parseInt(card, 10));
 			let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, hasPlayed = 1, cardPlayed = ?, cartasTablero = ? where idgame = ? and username = ? and turno = ?');
 			let info = sqlUpdateCartas.run(JSON.stringify(cartas), card, JSON.stringify(cartastablero), idgame, username, turno);
+			if(withWasabi == "yes" && card >= 68 && card <= 88){
+				let sqlWasabi = db.prepare('insert into nigiriwasabi (idgame, username, ronda, nigiri) values (?,?,?,?)');
+				let infoWasabi = sqlWasabi.run(idgame, username, infopartida.ronda, card);
+			}
 			res.json({status: "ok"});
 		}else{
 			res.json({status: "ERROR: La carta a jugar no está en tu mano."});
@@ -326,7 +335,13 @@ router.post('/nextturno', function(req, res, next) {
 	if(rows.length == row.numPlayers){
 		infoPlayers = [];
 		for(let i = 0; i < rows.length; i++){
-			infoPlayers.push({player: rows[i].numPlayer, cardPlayed: rows[i].cardPlayed, tablero: JSON.parse(rows[i].cartasTablero)})
+			let sqlwasabi = db.prepare('select * from nigiriwasabi where idgame = ? and username = ? and ronda = ? and nigiri = ?');
+			let rowwasabi = sqlwasabi.get(idgame, rows[i].username, row.ronda, rows[i].cardPlayed);
+			var withWasabi = "no";
+			if(rowwasabi != void(0)){
+				withWasabi = "yes";
+			}
+			infoPlayers.push({player: rows[i].numPlayer, cardPlayed: rows[i].cardPlayed, tablero: JSON.parse(rows[i].cartasTablero), withWasabi: withWasabi})
 		}
 		res.json({infoPlayers: infoPlayers, cartas: cartas, turno: nextTurno})
 		
