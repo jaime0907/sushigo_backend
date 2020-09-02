@@ -70,10 +70,10 @@ router.post('/crearsala', function(req, res, next) {
 	var sql = db.prepare('INSERT INTO partidas VALUES(?,?,?,?,?,?,?,?)');
 	var info = sql.run(idgame, sala, 1, currentTimeUNIX, JSON.stringify(baraja), 0, 0, 1);
 
-	var sql2 = db.prepare('INSERT INTO playersensala(username, idgame, sala, numPlayer, isLeader, turno) VALUES(?,?,?,?,?,?)');
-	var info = sql2.run(username, idgame, sala, 1, 1, 1);
+	var sql2 = db.prepare('INSERT INTO playersensala(username, idgame, sala, numPlayer, isLeader, turno, ronda) VALUES(?,?,?,?,?,?,?)');
+	var info = sql2.run(username, idgame, sala, 1, 1, 0, 0);
 
-	let sql3 = db.prepare('select * from playersensala where idgame = ? and turno = 1')
+	let sql3 = db.prepare('select * from playersensala where idgame = ? and turno = 0 and ronda = 0')
 	let rows = sql3.all(idgame);
 	var players = [];
 	rows.forEach(function(row){
@@ -98,7 +98,7 @@ router.post('/unirsala', function(req, res, next) {
 		res.json({idgame: "???", sala: 0, error: "La sala " + sala + " no está activa."});
 	}else{
 		var idgame = row.idgame;
-		var sql4 = db.prepare("select * from playersensala where username = ? and idgame = ? and turno = 1");
+		var sql4 = db.prepare("select * from playersensala where username = ? and idgame = ? and turno = 0 and ronda = 0");
 		var row2 = sql4.get(username, idgame);
 		if(row2 != void(0)){
 			res.json({idgame: "????", sala: 0, numplayers: 0, error: "Ya hay alguien en la sala " + sala + " llamado " + username + "."})
@@ -117,10 +117,10 @@ router.post('/unirsala', function(req, res, next) {
 		var sql2 = db.prepare("update partidas set numPlayers = ? where idgame = ?")
 		var info = sql2.run(numplayers + 1, idgame);
 
-		var sql3 = db.prepare('INSERT INTO playersensala(username, idgame, sala, numplayer, turno) VALUES(?,?,?,?,?)');
-		var info = sql3.run(username, idgame, sala, numplayers + 1, 1);
+		var sql3 = db.prepare('INSERT INTO playersensala(username, idgame, sala, numplayer, turno, ronda) VALUES(?,?,?,?,?,?)');
+		var info = sql3.run(username, idgame, sala, numplayers + 1, 0, 0);
 
-		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = 1')
+		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = 0 and ronda = 0')
 		let rows = sqlplayers.all(idgame);
 		var players = [];
 		rows.forEach(function(row){
@@ -147,7 +147,7 @@ router.post('/waitstart', function(req, res, next) {
 		res.json({idgame: "???", sala: 0, start: "no"});
 	}else{
 		let numplayers = row.numPlayers;
-		let sql2 = db.prepare('select * from playersensala where idgame = ? and turno = 1')
+		let sql2 = db.prepare('select * from playersensala where idgame = ? and turno = 0 and ronda = 0')
 		let rows = sql2.all(idgame);
 		var players = [];
 		rows.forEach(function(row){
@@ -157,7 +157,7 @@ router.post('/waitstart', function(req, res, next) {
 		if(row.ronda == 1){
 			start = "yes";
 		}
-		let sqlIsLeader = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = 1');
+		let sqlIsLeader = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = 0 and ronda = 0');
 		let rowIsLeader = sqlIsLeader.get(idgame, username);
 		res.json({idgame: row.idgame, sala: sala, start: start, numplayers: numplayers, arrayplayers: JSON.stringify(players), isLeader: rowIsLeader.isLeader});
 	}
@@ -178,7 +178,7 @@ router.post('/startgame', function(req, res, next) {
 		let sqlupdatepartida = db.prepare('update partidas set ronda = 1, turno = 1 where idgame = ?');
 		let info = sqlupdatepartida.run(idgame);
 
-		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = 1')
+		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = 0 and ronda = 0')
 		let rowsplayers = sqlplayers.all(idgame);
 		var players = [];
 		rowsplayers.forEach(function(row){
@@ -189,8 +189,14 @@ router.post('/startgame', function(req, res, next) {
 		var baraja = JSON.parse(row.baraja);
 		var numcartas = 12 - row.numPlayers;
 		for(let i = 0; i < players.length; i++){
-			let sqlupdatepartida = db.prepare('update playersensala set numPlayer = ?, cartas = ?, hasPlayed = 0, cartasTablero = ?, cardPlayed = 0 where username = ? and idgame = ? and turno = 1');
-			let info = sqlupdatepartida.run(i+1, JSON.stringify(baraja.slice(i*numcartas, (i+1)*numcartas)),JSON.stringify([]), players[i], idgame);
+
+			let cartas = baraja.slice(i*numcartas, (i+1)*numcartas);
+			
+			let sqlinfoplayer = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = 0 and ronda = 0');
+			let infoplayer = sqlinfoplayer.get(idgame, players[i]);
+
+			let sqlupdatepartida = db.prepare('insert into playersensala (numPlayer, cartas, hasPlayed, cartasTablero, cardPlayed, username, idgame, turno, ronda, sala, isLeader) values (?,?,?,?,?,?,?,?,?,?,?)');
+			let info = sqlupdatepartida.run(i+1, JSON.stringify(cartas), 0, JSON.stringify([]), 0, players[i], idgame, 1, 1, sala, infoplayer.isLeader);
 		}
 		res.json({todook: 'joseluis'});
 	}
@@ -205,14 +211,14 @@ router.post('/initgame', function(req, res, next) {
 	let sql = db.prepare('select * from partidas where idgame = ?');
 	var row = sql.get(idgame);
 	if(row.ronda == 1 && row.turno == 1){
-		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = 1');
+		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = 1 and ronda = 1');
 		let rows = sqlplayers.all(idgame);
 		var players = [];
 		rows.forEach(function(row){
 			players.push({username: row.username, num: row.numPlayer});
 		});
 	
-		let sqlcartas = db.prepare('select * from playersensala where username = ? and idgame = ? and turno = 1');
+		let sqlcartas = db.prepare('select * from playersensala where username = ? and idgame = ? and turno = 1 and ronda = 1');
 		let rowcartas = sqlcartas.get(username, idgame);
 		var cartas = JSON.parse(rowcartas.cartas);
 		res.json({numplayers: row.numPlayers, arrayplayers: players, cartas: cartas, numplayer: rowcartas.numPlayer, turno: 1, ronda: row.ronda});
@@ -227,6 +233,7 @@ router.post('/playcard', function(req, res, next) {
 	var sala = req.body.sala;
 	var card = req.body.card;
 	var turno = req.body.turno;
+	var ronda = req.body.ronda;
 	var withWasabi = req.body.withWasabi;
 	var withPalillos = req.body.withPalillos;
 	
@@ -236,8 +243,8 @@ router.post('/playcard', function(req, res, next) {
 	let sqlpartida = db.prepare('select * from partidas where idgame = ?');
 	var infopartida = sqlpartida.get(idgame);
 
-	let sql = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ?');
-	var row = sql.get(idgame, username, turno);
+	let sql = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ? and ronda = ?');
+	var row = sql.get(idgame, username, turno, ronda);
 	if(row.hasPlayed == 0){
 		if(withPalillos == "yes"){
 			let segundacarta = req.body.segundacarta;
@@ -257,35 +264,35 @@ router.post('/playcard', function(req, res, next) {
 					withWasabiSegundaInt = 1;
 				}
 
-				let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, cartasTablero = ?, withPalillos = 1, segundacarta = ?, withWasabiSegunda = ? where idgame = ? and username = ? and turno = ?');
-				let info = sqlUpdateCartas.run(JSON.stringify(cartas2), JSON.stringify(cartastablero2), segundacarta, withWasabiSegundaInt, idgame, username, turno);
+				let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, cartasTablero = ?, withPalillos = 1, segundacarta = ?, withWasabiSegunda = ? where idgame = ? and username = ? and turno = ? and ronda = ?');
+				let info = sqlUpdateCartas.run(JSON.stringify(cartas2), JSON.stringify(cartastablero2), segundacarta, withWasabiSegundaInt, idgame, username, turno, ronda);
 
 				if(withWasabiSegunda == "yes" && segundacarta >= 68 && segundacarta <= 88){
 					let sqlWasabi = db.prepare('insert into nigiriwasabi (idgame, username, ronda, nigiri) values (?,?,?,?)');
-					let infoWasabi = sqlWasabi.run(idgame, username, infopartida.ronda, segundacarta);
+					let infoWasabi = sqlWasabi.run(idgame, username, ronda, segundacarta);
 				}
 			}else{
 				res.json({status: "ERROR: La carta a jugar no está en tu mano."});
 			}
 
 			//quito los palillos
-			let sql2 = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ?');
-			var row2 = sql2.get(idgame, username, turno);
+			let sql2 = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ? and ronda = ?');
+			var row2 = sql2.get(idgame, username, turno, ronda);
 			let cartas = JSON.parse(row2.cartas);
 			let cartastablero = JSON.parse(row2.cartasTablero);
 			const index = cartastablero.indexOf(parseInt(palillos, 10));
 			if (index > -1) {
 				cartastablero.splice(index, 1);
 				cartas.push(parseInt(palillos, 10));
-				let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, cartasTablero = ? where idgame = ? and username = ? and turno = ?');
-				let info = sqlUpdateCartas.run(JSON.stringify(cartas), JSON.stringify(cartastablero), idgame, username, turno);
+				let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, cartasTablero = ? where idgame = ? and username = ? and turno = ? and ronda = ?');
+				let info = sqlUpdateCartas.run(JSON.stringify(cartas), JSON.stringify(cartastablero), idgame, username, turno, ronda);
 			}else{
 				res.json({status: "ERROR: Los palillos no están en tu tablero."});
 			}
 		}
 
-		let sql3 = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ?');
-		row = sql3.get(idgame, username, turno);
+		let sql3 = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ? and ronda = ?');
+		row = sql3.get(idgame, username, turno, ronda);
 		let cartas = JSON.parse(row.cartas);
 		let cartastablero = JSON.parse(row.cartasTablero);
 		const index = cartas.indexOf(parseInt(card, 10));
@@ -296,11 +303,11 @@ router.post('/playcard', function(req, res, next) {
 			if(withWasabi == "yes"){
 				withWasabiInt = 1;
 			}
-			let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, hasPlayed = 1, cardPlayed = ?, cartasTablero = ?, withWasabi = ? where idgame = ? and username = ? and turno = ?');
-			let info = sqlUpdateCartas.run(JSON.stringify(cartas), card, JSON.stringify(cartastablero), withWasabiInt, idgame, username, turno);
+			let sqlUpdateCartas = db.prepare('update playersensala set cartas = ?, hasPlayed = 1, cardPlayed = ?, cartasTablero = ?, withWasabi = ? where idgame = ? and username = ? and turno = ? and ronda = ?');
+			let info = sqlUpdateCartas.run(JSON.stringify(cartas), card, JSON.stringify(cartastablero), withWasabiInt, idgame, username, turno, ronda);
 			if(withWasabi == "yes" && card >= 68 && card <= 88){
 				let sqlWasabi = db.prepare('insert into nigiriwasabi (idgame, username, ronda, nigiri) values (?,?,?,?)');
-				let infoWasabi = sqlWasabi.run(idgame, username, infopartida.ronda, card);
+				let infoWasabi = sqlWasabi.run(idgame, username, ronda, card);
 			}
 			res.json({status: "ok"});
 		}else{
@@ -316,6 +323,7 @@ router.post('/waitturno', function(req, res, next) {
 	var idgame = req.body.idgame;
 	var sala = req.body.sala;
 	var turno = req.body.turno;
+	var ronda = req.body.ronda;
 	
 	console.log(username + ": waitturno");
 
@@ -323,17 +331,16 @@ router.post('/waitturno', function(req, res, next) {
 
 	let sqlgame = db.prepare('select * from partidas where idgame = ?');
 	var row = sqlgame.get(idgame);
-	var turno = row.turno;
 
-	let sql = db.prepare('select * from playersensala where idgame = ? and hasPlayed = 1 and turno = ?');
-	var rows = sql.all(idgame, turno);
+	let sql = db.prepare('select * from playersensala where idgame = ? and hasPlayed = 1 and turno = ? and ronda = ?');
+	var rows = sql.all(idgame, turno, ronda);
 	var playersFin = [];
 	rows.forEach(function(row){
 		playersFin.push({numPlayer: row.numPlayer, withPalillos: row.withPalillos});
 	})
 
-	let sqlFin = db.prepare('select * from playersensala where idgame = ? and hasPlayed = 0 and turno = ?');
-	var rowsFin = sqlFin.all(idgame, turno);
+	let sqlFin = db.prepare('select * from playersensala where idgame = ? and hasPlayed = 0 and turno = ? and ronda = ?');
+	var rowsFin = sqlFin.all(idgame, turno, ronda);
 	if(rowsFin.length == 0){
 		res.json({playersFin: playersFin, endTurn: "yes"})
 	}else{
@@ -346,6 +353,7 @@ router.post('/nextturno', function(req, res, next) {
 	var idgame = req.body.idgame;
 	var sala = req.body.sala;
 	var turno = req.body.turno;
+	var ronda = req.body.ronda;
 	
 	console.log(username + ": nextturno");
 
@@ -364,16 +372,17 @@ router.post('/nextturno', function(req, res, next) {
 		endRonda = true;
 	}
 
-	if(nextTurno > parseInt(row.turno, 10)){
+	if(nextTurno > parseInt(row.turno, 10) && !endRonda){
 		let sqlnextturno = db.prepare('update partidas set turno = ? where idgame = ?');
 		let infonextturno = sqlnextturno.run(nextTurno, idgame);
+		row = sqlgame.get(idgame);
 	}
 
 	var cartas = []
 
 	if(!endRonda){
-		let sqlsala = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ?');
-		var playersensala = sqlsala.get(idgame, username, turno);
+		let sqlsala = db.prepare('select * from playersensala where idgame = ? and username = ? and turno = ? and ronda = ?');
+		var playersensala = sqlsala.get(idgame, username, turno, ronda);
 
 		console.log("numPlayer: " + playersensala.numPlayer);
 		var numPlayer = parseInt(playersensala.numPlayer, 10);
@@ -383,28 +392,30 @@ router.post('/nextturno', function(req, res, next) {
 		}
 		console.log("prevPlayer: " + prevPlayer);
 
-		let sqlsala2 = db.prepare('select * from playersensala where idgame = ? and numPlayer = ? and turno = ?');
-		var playeranterior = sqlsala2.get(idgame, prevPlayer, turno);
+		let sqlsala2 = db.prepare('select * from playersensala where idgame = ? and numPlayer = ? and turno = ? and ronda = ?');
+		var playeranterior = sqlsala2.get(idgame, prevPlayer, turno, ronda);
 
 		cartas = JSON.parse(playeranterior.cartas);
 
-		let sqlUpdateCartas = db.prepare('insert into playersensala (username, idgame, sala, numPlayer, isLeader, cartas, hasPlayed, cardPlayed, turno, cartasTablero) values (?,?,?,?,?,?,?,?,?,?)');
-		let info = sqlUpdateCartas.run(username, idgame, sala, numPlayer, playersensala.isLeader, JSON.stringify(cartas), 0, playersensala.cardPlayed, nextTurno, JSON.stringify(JSON.parse(playersensala.cartasTablero)));
+		let sqlUpdateCartas = db.prepare('insert into playersensala (username, idgame, sala, numPlayer, isLeader, cartas, hasPlayed, cardPlayed, turno, ronda, cartasTablero) values (?,?,?,?,?,?,?,?,?,?,?)');
+		let info = sqlUpdateCartas.run(username, idgame, sala, numPlayer, playersensala.isLeader, JSON.stringify(cartas), 0, playersensala.cardPlayed, nextTurno, ronda, JSON.stringify(JSON.parse(playersensala.cartasTablero)));
 	}
 
-	let sqlsala3 = db.prepare('select * from playersensala where idgame = ? and turno = ?');
-	var rows = sqlsala3.all(idgame, turno);
+	let sqlsala3 = db.prepare('select * from playersensala where idgame = ? and turno = ? and ronda = ?');
+	var rows = sqlsala3.all(idgame, turno, ronda);
 
 	if(rows.length == row.numPlayers){
 		infoPlayers = [];
 		for(let i = 0; i < rows.length; i++){
 			infoPlayers.push({player: rows[i].numPlayer, cardPlayed: rows[i].cardPlayed, tablero: JSON.parse(rows[i].cartasTablero), withWasabi: rows[i].withWasabi, withPalillos: rows[i].withPalillos, segundacarta: rows[i].segundacarta, withWasabiSegunda: rows[i].withWasabiSegunda})
 		}
+
 		endRondaText = "no";
 		if(endRonda){
 			endRondaText = "yes";
 		}
-		res.json({infoPlayers: infoPlayers, cartas: cartas, turno: nextTurno, endRonda: endRondaText, ronda: row.ronda})
+
+		res.json({infoPlayers: infoPlayers, cartas: cartas, turno: row.turno, endRonda: endRondaText, ronda: row.ronda})
 		
 	}else{
 		res.json({error:"rows.length distinto de row.numPlayers"});
@@ -415,10 +426,10 @@ router.post('/resultsronda', function(req, res, next) {
 	var username = req.body.username;
 	var idgame = req.body.idgame;
 	var sala = req.body.sala;
-	var nextTurno = req.body.turno;
+	var turnoStr = req.body.turno;
 	var ronda = parseInt(req.body.ronda,10);
 	
-	var turno = parseInt(nextTurno, 10) - 1;
+	var turno = parseInt(turnoStr, 10);
 
 	console.log(username + ": resultsronda");
 
@@ -427,8 +438,8 @@ router.post('/resultsronda', function(req, res, next) {
 	let sqlgame = db.prepare('select * from partidas where idgame = ?');
 	var row = sqlgame.get(idgame);
 
-	let sqlsala = db.prepare('select * from playersensala where idgame = ? and turno = ?');
-	var rows = sqlsala.all(idgame, turno);
+	let sqlsala = db.prepare('select * from playersensala where idgame = ? and turno = ? and ronda = ?');
+	var rows = sqlsala.all(idgame, turno, ronda);
 
 	if(rows.length == row.numPlayers){
 		var infoPlayers = [];
@@ -441,6 +452,7 @@ router.post('/resultsronda', function(req, res, next) {
 			var gyoza = 0;
 			var maki = 0;
 			var nigiri = 0;
+			var pudin = 0;
 			for(let j = 0; j < tablero.length; j++){
 				let carta = tablero[j];
 				if(carta > 0 && carta <= 14){
@@ -469,6 +481,8 @@ router.post('/resultsronda', function(req, res, next) {
 					}else if(carta <= 88){
 						nigiri = nigiri + 3*wasabi;
 					}
+				}else if(carta <= 98){
+					pudin++;
 				}
 			}
 			var puntosGyoza = 0;
@@ -494,9 +508,10 @@ router.post('/resultsronda', function(req, res, next) {
 			}
 			makis.push({player: rows[i].numPlayer, maki: maki})
 			var puntos = Math.floor(tempura / 2)*5 + Math.floor(sashimi / 3)*10 + puntosGyoza + nigiri;
-			infoPlayers.push({player: rows[i].numPlayer, puntos: puntos, username: rows[i].username, tempura: tempura, sashimi: sashimi, gyoza: gyoza, puntosGyoza: puntosGyoza, maki: maki, nigiri: nigiri})
+			infoPlayers.push({player: rows[i].numPlayer, puntos: puntos, puntoslist: [], username: rows[i].username, tempura: tempura, sashimi: sashimi, gyoza: gyoza, puntosGyoza: puntosGyoza, maki: maki, nigiri: nigiri, pudin:pudin, pudinpuntos: 0, ganador: "no"})
 		}
 
+		//Calculo los makis
 		var primeroMakis = {lista: [], maki: 0};
 		var segundoMakis = {lista: [], maki: 0};
 		for(let i = 0; i < makis.length; i++){
@@ -531,6 +546,7 @@ router.post('/resultsronda', function(req, res, next) {
 			
 		}
 		
+		//Añado los makis a la puntuacion
 		for(let i = 0; i < infoPlayers.length; i++){
 			infoPlayers[i].arrayMakiPrimero = primeroMakis.lista;
 			infoPlayers[i].arrayMakiSegundo = segundoMakis.lista;
@@ -551,11 +567,238 @@ router.post('/resultsronda', function(req, res, next) {
 				infoPlayers[i].posMaki = "Segundo";
 			}
 		}
-		res.json({infoPlayers: infoPlayers})
+
+		let sqlpuntos = db.prepare('select * from puntos where idgame = ? and ronda = ?');
+		let infopuntos = sqlpuntos.all(idgame, ronda);
+
+		if(infopuntos.length == 0){
+			for(let i = 0; i < infoPlayers.length; i++){
+				let sqlinsertpuntos = db.prepare('insert into puntos (idgame, numPlayer, username, ronda, puntos, pudin, isReady) values (?,?,?,?,?,?,?)');
+				let infoinsertpuntos = sqlinsertpuntos.run(idgame, rows[i].numPlayer, rows[i].username, ronda, infoPlayers[i].puntos, infoPlayers[i].pudin, 0);
+			}
+		}
+
+		for(let i = 0; i < infoPlayers.length; i++){ 
+			let sqlpuntosall = db.prepare('select * from puntos where idgame = ? and username = ?');
+			let infopuntos = sqlpuntosall.all(idgame, infoPlayers[i].username);
+
+			var pudin = 0;
+			var total = 0;
+			for(let j = 0; j < infopuntos.length; j++){
+				pudin += infopuntos[j].pudin;
+				infoPlayers[i].puntoslist.push({ronda: infopuntos[j].ronda, puntos: infopuntos[j].puntos});
+				total += infopuntos[j].puntos;
+			}
+			if(ronda == 3){
+				infoPlayers[i].pudin = pudin;
+				infoPlayers[i].totalpuntos = total;
+			}
+		}
+
+		//Pudines
+		if(ronda == 3){
+			var todosPudinIgual = true;
+			var lastPudin = -1;
+			var primeroPudin = {lista: [], pudin: 1};
+			var ultimoPudin = {lista: [], pudin: 100};
+			for(let i = 0; i < infoPlayers.length; i++){
+				var pudinTemp = infoPlayers[i].pudin;
+				var numPlayerTemp = infoPlayers[i].player;
+
+				if(pudinTemp > primeroPudin.pudin){
+					primeroPudin.lista = [];
+					primeroPudin.lista.push(numPlayerTemp);
+					primeroPudin.pudin = pudinTemp;
+				}else if(pudinTemp == primeroPudin.pudin){
+					primeroPudin.lista.push(numPlayerTemp);
+				}
+
+				if(pudinTemp < ultimoPudin.pudin){
+					ultimoPudin.lista = [];
+					ultimoPudin.lista.push(numPlayerTemp);
+					ultimoPudin.pudin = pudinTemp;
+				}else if(pudinTemp == ultimoPudin.pudin){
+					ultimoPudin.lista.push(numPlayerTemp);
+				}
+
+				if(lastPudin == -1){
+					lastPudin = pudinTemp;
+				}else{
+					if(lastPudin != pudinTemp && todosPudinIgual){
+						todosPudinIgual = false;
+					}
+				}
+			}
+
+			if(!todosPudinIgual){
+				for(let i = 0; i < primeroPudin.lista.length; i++){
+					for(let j = 0; j < infoPlayers.length; j++){
+						if(infoPlayers[j].player == primeroPudin.lista[i]){
+							infoPlayers[j].totalpuntos += Math.floor(6 / primeroPudin.lista.length);
+							infoPlayers[j].pudinpuntos = Math.floor(6 / primeroPudin.lista.length);
+						}
+					}
+				}
+	
+				if(infoPlayers.length > 2){
+					for(let i = 0; i < ultimoPudin.lista.length; i++){
+						for(let j = 0; j < infoPlayers.length; j++){
+							if(infoPlayers[j].player == ultimoPudin.lista[i]){
+								infoPlayers[j].totalpuntos -= Math.floor(6 / ultimoPudin.lista.length);
+								infoPlayers[j].pudinpuntos = 0 - Math.floor(6 / ultimoPudin.lista.length);
+							}
+						}
+					}
+				}
+			}
+			
+		}
+		var hayTie = "no";
+		//Ganador
+		if(ronda == 3){
+			var primero = {lista: [], puntos: 0};
+			
+
+			for(let i = 0; i < infoPlayers.length; i++){
+				var pudinTemp = infoPlayers[i].pudin;
+				var puntosTemp = infoPlayers[i].totalpuntos;
+				var numPlayerTemp = infoPlayers[i].player;
+
+				if(puntosTemp > primero.puntos){
+					primero.lista = [];
+					primero.lista.push({numPlayer: numPlayerTemp, pudin: pudinTemp});
+					primero.puntos = puntosTemp;
+				}else if(puntosTemp == primero.puntos){
+					primero.lista.push({numPlayer: numPlayerTemp, pudin: pudinTemp});
+				}
+
+			}
+
+			if(primero.lista.length == 1){
+				for(let i = 0; i < infoPlayers.length; i++){
+					if(infoPlayers[i].player == primero.lista[0].numPlayer){
+						infoPlayers[i].ganador = "yes";
+					}
+				}
+			}else{
+				var primeroPudin = {lista: [], pudin: 0};
+				for(let i = 0; i < primero.lista.length; i++){
+					var pudinTemp = primero.lista[i].pudin;
+					var numPlayerTemp = primero.lista[i].numPlayer;
+
+					if(pudinTemp > primeroPudin.pudin){
+						primeroPudin.lista = [];
+						primeroPudin.lista.push(numPlayerTemp);
+						primeroPudin.pudin = pudinTemp;
+					}else if(pudinTemp == primeroPudin.pudin){
+						primeroPudin.lista.push(numPlayerTemp);
+					}
+				}
+				if(primeroPudin.lista.length == 1){
+					for(let i = 0; i < infoPlayers.length; i++){
+						if(infoPlayers[i].player == primeroPudin.lista[0]){
+							infoPlayers[i].ganador = "yes";
+						}
+					}
+				}else{
+					hayTie = "yes";
+					for(let i = 0; i < infoPlayers.length; i++){
+						for(let j = 0; j < primeroPudin.lista.length; j++){
+							if(infoPlayers[i].player == primeroPudin.lista[j]){
+								infoPlayers[i].ganador = "tie";
+							}
+						}
+					}
+				}
+			}
+		}
+		
+
+		res.json({infoPlayers: infoPlayers, hayTie: hayTie})
 		
 	}else{
 		res.json({error:"rows.length distinto de row.numPlayers"});
 	}
+});
+
+router.post('/waitnextronda', function(req, res, next) {
+	var username = req.body.username;
+	var idgame = req.body.idgame;
+	var sala = req.body.sala;
+	var ronda = parseInt(req.body.ronda,10);
+	var isReadyStr = req.body.isReady;
+
+	console.log(username + ": waitnextronda");
+
+	let db = req.app.get('database');
+
+	let sqlgame = db.prepare('select * from partidas where idgame = ?');
+	var infogame = sqlgame.get(idgame);
+
+	let sqlpuntosplayer = db.prepare('select * from puntos where idgame = ? and username = ? and ronda = ?');
+	let infopuntosplayer = sqlpuntosplayer.get(idgame, username, ronda);
+
+	if(infopuntosplayer.isReady == 0 && isReadyStr == "yes"){
+		let sqlupdatepuntosplayer = db.prepare('update puntos set isReady = 1 where idgame = ? and username = ? and ronda = ?');
+		let infoupdatepuntosplayer = sqlupdatepuntosplayer.run(idgame, username, ronda);
+	}
+
+	let sqlpuntos = db.prepare('select * from puntos where idgame = ? and ronda = ?');
+	let infopuntos = sqlpuntos.all(idgame, ronda);
+
+	playersready = [];
+	for(let i = 0; i < infopuntos.length; i++){
+		if(infopuntos[i].isReady == 1){
+			playersready.push(infopuntos[i].numPlayer);
+		}
+	}
+
+	var allReady = "no";
+	if(playersready.length == infopuntos.length){
+		allReady = "yes";
+	}
+
+	res.json({playersready: playersready, allReady: allReady})
+});
+
+router.post('/nextronda', function(req, res, next) {
+	var username = req.body.username;
+	var idgame = req.body.idgame;
+	var sala = req.body.sala;
+	var turno = parseInt(req.body.turno, 10);
+	var ronda = parseInt(req.body.ronda, 10);
+
+	var nextRonda = ronda + 1;
+	var nextTurno = 1;
+
+	console.log(username + ": nextronda");
+
+	let db = req.app.get('database');
+	let sql = db.prepare('select * from partidas where idgame = ?');
+	let row = sql.get(idgame);
+	if(row.ronda == ronda){ //solo hacer cambios si eres el primero en hacer nextronda
+		
+		let sqlupdatepartida = db.prepare('update partidas set ronda = ?, turno = 1 where idgame = ?');
+		let info = sqlupdatepartida.run(nextRonda, idgame);
+
+		let sqlplayers = db.prepare('select * from playersensala where idgame = ? and turno = ? and ronda = ?')
+		let rowsplayers = sqlplayers.all(idgame, turno, ronda);
+
+		var baraja = JSON.parse(row.baraja);
+		var numcartas = 12 - row.numPlayers;
+		for(let i = 0; i < rowsplayers.length; i++){
+			let cartas = baraja.slice(i*numcartas + row.numPlayers*numcartas*(nextRonda-1), (i+1)*numcartas + row.numPlayers*numcartas*(nextRonda-1));
+		
+			let sqlupdatepartida = db.prepare('insert into playersensala (numPlayer, cartas, hasPlayed, cartasTablero, cardPlayed, username, idgame, turno, ronda, sala, isLeader) values (?,?,?,?,?,?,?,?,?,?,?)');
+			let info = sqlupdatepartida.run(rowsplayers[i].numPlayer, JSON.stringify(cartas), 0, JSON.stringify([]), 0, rowsplayers[i].username, idgame, 1, nextRonda, sala, rowsplayers[i].isLeader);
+		}
+	}
+
+	let sqlplayer = db.prepare('select * from playersensala where idgame = ? and turno = ? and ronda = ? and username = ?')
+	let infoplayer = sqlplayer.get(idgame, nextTurno, nextRonda, username);
+
+	res.json({cartas: JSON.parse(infoplayer.cartas), turno: nextTurno, ronda: nextRonda})
+
 });
 
 module.exports = router;
